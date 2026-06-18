@@ -1,0 +1,76 @@
+# GLM-5.2-NVFP4-REAP-469B on 4x RTX PRO 6000 Blackwell (SM120).
+# Requires Docker + NVIDIA Container Toolkit and access to the voipmonitor b12x image.
+# Reads variables from .env (see .env.example). Then:  docker compose up -d
+services:
+  glm52-vllm:
+    image: ${IMAGE:-voipmonitor/vllm:black-benediction-b12xpr11-vllmbb6c5b7-b12xd90d89c-fi3395b41aa8d-dg324aced12c-cu132-20260608}
+    container_name: ${NAME:-glm52-vllm}
+    privileged: true
+    network_mode: host
+    ipc: host
+    shm_size: "32gb"
+    ulimits:
+      memlock: -1
+      stack: 67108864
+    volumes:
+      - ${MODEL:-/mnt/llm_models/GLM-5.2-NVFP4-REAP-469B}:/model:ro
+      - glm52-jit:/cache/jit
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    environment:
+      CUDA_DEVICE_ORDER: PCI_BUS_ID
+      CUDA_VISIBLE_DEVICES: "0,1,2,3"
+      OMP_NUM_THREADS: "16"
+      CUTE_DSL_ARCH: sm_120a
+      CUDA_DEVICE_MAX_CONNECTIONS: "32"
+      NCCL_P2P_LEVEL: SYS
+      NCCL_P2P_DISABLE: "1"        # Blackwell PCIe P2P allreduce deadlocks without this
+      NCCL_SHM_DISABLE: "0"
+      NCCL_PROTO: "LL,LL128,Simple"
+      NCCL_IB_DISABLE: "1"
+      USE_NCCL_XML: "0"
+      NCCL_GRAPH_FILE: /dev/null
+      PYTORCH_CUDA_ALLOC_CONF: expandable_segments:True
+      SAFETENSORS_FAST_GPU: "1"
+      VLLM_WORKER_MULTIPROC_METHOD: spawn
+      VLLM_USE_B12X_SPARSE_INDEXER: "1"
+      VLLM_USE_B12X_MOE: "1"
+      VLLM_USE_V2_MODEL_RUNNER: "1"
+      VLLM_USE_FLASHINFER_SAMPLER: "1"
+      VLLM_USE_B12X_FP8_GEMM: "1"
+      VLLM_ENABLE_PCIE_ALLREDUCE: "0"
+      VLLM_MEMORY_PROFILER_ESTIMATE_CUDAGRAPHS: "0"
+      VLLM_DISABLED_KERNELS: MarlinFP8ScaledMMLinearKernel
+      USES_B12X: "True"
+      B12X_DENSE_SPLITK_TURBO: "1"
+      B12X_W4A16_TC_DECODE: "1"
+      B12X_MOE_FORCE_A16: "1"
+      XDG_CACHE_HOME: /cache/jit
+      CUDA_CACHE_PATH: /cache/jit
+      VLLM_CACHE_DIR: /cache/jit/vllm
+    entrypoint: ["/bin/bash", "-lc"]
+    command:
+      - >
+        unset NCCL_GRAPH_FILE NCCL_GRAPH_DUMP_FILE VLLM_B12X_MLA_EXTEND_MAX_CHUNKS;
+        exec /opt/venv/bin/python -m vllm.entrypoints.cli.main serve /model
+        --served-model-name ${SERVED_MODEL_NAME:-GLM-5.2-NVFP4-REAP-469B}
+        --trust-remote-code --host 0.0.0.0 --port ${PORT:-5329}
+        --tensor-parallel-size ${TP_SIZE:-4} --pipeline-parallel-size 1
+        --decode-context-parallel-size ${DCP_SIZE:-4}
+        --enable-chunked-prefill --enable-prefix-caching --load-format fastsafetensors --async-scheduling
+        -cc.pass_config.fuse_allreduce_rms=True
+        --gpu-memory-utilization ${GPU_MEMORY_UTILIZATION:-0.95}
+        --max-num-batched-tokens ${MAX_NUM_BATCHED_TOKENS:-8192} --max-num-seqs ${MAX_NUM_SEQS:-2}
+        --max-cudagraph-capture-size 8 --max-model-len ${MAX_MODEL_LEN:-250000}
+        --quantization modelopt_fp4 --attention-backend B12X_MLA_SPARSE --moe-backend b12x
+        --kv-cache-dtype fp8 --tool-call-parser glm47 --enable-auto-tool-choice --reasoning-parser glm45
+        --hf-overrides '{"index_topk_pattern":"FFFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSSFSSS"}'
+        --speculative-config '{"method":"mtp","num_speculative_tokens":3,"moe_backend":"b12x","draft_sample_method":"probabilistic"}'
+
+volumes:
+  glm52-jit:
