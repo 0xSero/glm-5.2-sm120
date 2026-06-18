@@ -78,6 +78,7 @@ else
 fi
 
 docker run -d \
+  --restart unless-stopped \
   --gpus all \
   --ipc=host \
   --shm-size=32g \

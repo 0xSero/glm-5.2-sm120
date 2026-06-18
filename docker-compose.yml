@@ -5,6 +5,7 @@ services:
   glm52-vllm:
     image: ${IMAGE:-voipmonitor/vllm:black-benediction-b12xpr11-vllmbb6c5b7-b12xd90d89c-fi3395b41aa8d-dg324aced12c-cu132-20260608}
     container_name: ${NAME:-glm52-vllm}
+    restart: unless-stopped
     privileged: true
     network_mode: host
     ipc: host
