@@ -109,6 +109,31 @@ With DCP=1 the MLA KV cache is replicated per TP rank, so a single 250k request 
 ~14.5 GB but only ~10.3 GB/GPU is free → OOM (max ~177k). `decode-context-parallel-size=4`
 shards the KV across the 4 GPUs along the sequence dim, yielding a 710,593-token pool.
 
+### Choosing DCP — context vs speed (measured on this box)
+
+`DCP=4` is the default because it unlocks **250k context + 2.84× concurrency**.
+But sharding the MLA KV across 4 GPUs has a real throughput cost — **decode is
+~1.6× slower than DCP=1.** If you don't need long context, drop DCP.
+
+| `DCP_SIZE` | Max context | KV pool @ max | Decode (single) | Concurrency | When to use |
+|---|---|---|---|---|---|
+| **1** | ~131k (OOM > ~177k) | ~178k tok | **~81 tok/s** | 1.36× | ≤128k context, want max speed |
+| 2 | 250k | ~355k tok | ~49 tok/s | 1.42× | middle ground |
+| **4** *(default)* | 250k | 710,593 tok | ~50 tok/s | **2.84×** | long context / high concurrency |
+
+> Measured at temp 0, b12x, MTP=3, fp8 KV. Decode tok/s is steady-state (reliable);
+> **cold TTFT is compile-dominated** — the first request at a new prompt length
+> JIT-compiles that size bucket (tens of seconds), then warm/prefix-cache hits are
+> fast (see [Performance](#performance-measured-warm)). So a slow *first* request is
+> the kernel cache warming up, **not** a hang.
+
+**For a fast ≤128k endpoint**, set in `.env`:
+
+```bash
+DCP_SIZE=1
+MAX_MODEL_LEN=131072
+```
+
 ### Why `NCCL_P2P_DISABLE=1`
 
 These RTX PRO 6000 are PCIe (no NVLink); the b12x PCIe allreduce path hangs at NCCL
