@@ -29,7 +29,7 @@ MODEL_ALIASES="${MODEL_ALIASES:-GLM-5.2-NVFP4-REAP-469B GLM-5.2}"  # extra ids t
 # full chain-of-thought (then give requests a generous max_tokens, >=2000). ---
 ENABLE_THINKING="${ENABLE_THINKING:-1}"
 if [[ "${ENABLE_THINKING}" == "1" ]]; then
-  CHAT_TEMPLATE=""                                  # model's native template (thinking on)
+  CHAT_TEMPLATE="/recipe/chat_template.think.jinja"  # thinking on, reasoning effort defaults to high
   REASONING_PARSER="glm45"                          # split reasoning vs content
 else
   CHAT_TEMPLATE="/recipe/chat_template.nothink.jinja"  # thinking off by default
