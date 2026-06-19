@@ -190,11 +190,20 @@ docker run -d \
 BASE="http://localhost:${PORT}"
 echo "==> Waiting for the server to come up (first boot compiles kernels + captures CUDA graphs, ~6 min)..."
 DEADLINE=$(( $(date +%s) + ${BOOT_TIMEOUT:-1200} ))
+FAILS=0
 until [ "$(curl -s -o /dev/null -w '%{http_code}' "${BASE}/health" 2>/dev/null)" = "200" ]; do
-  if ! docker ps --format '{{.Names}}' | grep -qx "${NAME}"; then
-    echo "!! Container exited during boot. Last 40 log lines:"; docker logs --tail 40 "${NAME}" 2>&1 || true
-    exit 1
-  fi
+  # Restart-tolerant: --restart unless-stopped may briefly bounce the container
+  # during boot. Only fail if it stays exited/dead/gone for ~30s (not on a blip).
+  STATE="$(docker inspect -f '{{.State.Status}}' "${NAME}" 2>/dev/null || echo missing)"
+  case "${STATE}" in
+    running|created|restarting) FAILS=0 ;;
+    *) FAILS=$(( ${FAILS:-0} + 1 ))
+       if [ "${FAILS}" -ge 6 ]; then
+         echo "!! Container is ${STATE} and not recovering. Last 40 log lines:"
+         docker logs --tail 40 "${NAME}" 2>&1 || true
+         exit 1
+       fi ;;
+  esac
   if [ "$(date +%s)" -ge "${DEADLINE}" ]; then
     echo "!! Timed out waiting for /health. Last 40 log lines:"; docker logs --tail 40 "${NAME}" 2>&1 || true
     exit 1
