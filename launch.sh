@@ -79,6 +79,8 @@ fi
 
 docker run -d \
   --restart unless-stopped \
+  --log-opt max-size=100m \
+  --log-opt max-file=5 \
   --gpus all \
   --ipc=host \
   --shm-size=32g \
@@ -211,12 +213,18 @@ except Exception as e:
     print("")' 2>/dev/null)
 
 if [ -n "${ANSWER}" ]; then
+  # Forward serve logs to a file + persist peak prefill/decode (survives restarts).
+  LOG_DIR="${LOG_DIR:-${RECIPE_DIR}/logs}"; mkdir -p "${LOG_DIR}"
+  [ -f "${LOG_DIR}/monitor.pid" ] && kill "$(cat "${LOG_DIR}/monitor.pid")" 2>/dev/null || true
+  LOG_DIR="${LOG_DIR}" nohup ./monitor.sh >/dev/null 2>&1 &
+  echo $! > "${LOG_DIR}/monitor.pid"
   echo ""
   echo "  ============================================================"
   echo "  ✅ READY — GLM-5.2 is serving and answered: ${ANSWER}"
   echo "  Endpoint : ${BASE}/v1   (model: ${SERVED_MODEL_NAME})"
   echo "  Try it   : ./chat.sh \"write a haiku about GPUs\""
   echo "  Reasoning: thinking is $([[ ${ENABLE_THINKING} == 1 ]] && echo ON || echo OFF) (set ENABLE_THINKING=1 for chain-of-thought)"
+  echo "  Logs     : ${LOG_DIR}/serve.log  |  Peaks: ${LOG_DIR}/peak.json"
   echo "  ============================================================"
 else
   echo "!! Server is up but the smoke test returned empty content. Raw response:"

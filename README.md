@@ -159,6 +159,30 @@ init without P2P disabled.
 > bucket (e.g. ~195 s for a fresh 99.5k prompt). Subsequent same-size prefills and
 > prefix-cache hits are fast.
 
+## Logs & peak throughput
+
+`launch.sh` starts a background monitor (`monitor.sh`) that **forwards the serve logs
+to a file** and **records peak prefill/decode throughput** — both survive container
+auto-restarts (it re-attaches).
+
+| File | Contents |
+|---|---|
+| `logs/serve.log` | full vLLM serve logs — `tail -f logs/serve.log`; rotated at 100 MB |
+| `logs/peak.json` | `{ "peak_prefill_tps", "peak_decode_tps", "updated" }` |
+
+```bash
+tail -f logs/serve.log          # live serve logs
+cat   logs/peak.json            # peak throughput so far
+```
+
+Measured peaks here (DCP=4, 250k, MTP): **decode ~57–60 tok/s**, **prefill ~1,400
+tok/s** warm (a cold first-touch of a new prompt length compiles that size bucket
+first — see [Performance](#performance-measured-warm)). Peaks accumulate across the
+life of the deployment, including container restarts.
+
+> `docker compose` users: run `./monitor.sh &` once after `up` — compose can't start
+> the host-side monitor itself (the `logging:` block still rotates `docker logs`).
+
 ## Testing
 
 ```bash
